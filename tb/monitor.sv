@@ -60,6 +60,10 @@
 class fifo_monitor #(parameter int DATA_WIDTH = 8);
     typedef fifo_transaction #(DATA_WIDTH) trans_t;
 
+    int cov_full_hits  = 0;
+    int cov_empty_hits = 0;
+    int cov_simul_rw   = 0;
+
     virtual fifo_if #(DATA_WIDTH) vif;
     mailbox #(trans_t)            mon2scb;
 
@@ -81,6 +85,8 @@ class fifo_monitor #(parameter int DATA_WIDTH = 8);
                     tr.full    = vif.wr_full;
                     mon2scb.put(tr);
                 end
+                if (vif.wr_full) cov_full_hits++;
+                if (vif.wr_en && !vif.wr_full && vif.rd_en && !vif.rd_empty) cov_simul_rw++;
             end
 
             // Passive Read Domain Watcher
@@ -94,6 +100,7 @@ class fifo_monitor #(parameter int DATA_WIDTH = 8);
                     tr.empty   = vif.rd_empty;
                     mon2scb.put(tr);
                 end
+                if (vif.rd_empty) cov_empty_hits++;
             end
         join
     endtask

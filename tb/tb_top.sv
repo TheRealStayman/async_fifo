@@ -75,8 +75,11 @@ module tb_top;
     logic wr_rst_n = 0;
     logic rd_rst_n = 0;
 
-    always #5   wr_clk = ~wr_clk;
-    always #12.5 rd_clk = ~rd_clk;
+    real wr_half_period = 5.0;   // Starts at 100 MHz (10ns period)
+    real rd_half_period = 12.5;  // Starts at 40 MHz  (25ns period)
+
+    always #(wr_half_period) wr_clk = ~wr_clk;
+    always #(rd_half_period) rd_clk = ~rd_clk;
 
     fifo_if #(DATA_WIDTH) intf (
         .wr_clk   (wr_clk),
@@ -116,7 +119,7 @@ module tb_top;
         // Watchdog: 100 us (1000 reads at 40MHz = 25ns * 2 cycles * 1000 = 50,000ns)
         fork
             begin
-                #100000;
+                #250000;
                 $display("\n[%0t ns] [WATCHDOG] Simulation timed out!", $time);
                 $display("   Mailbox WR left: %0d | Mailbox RD left: %0d", gen2drv_wr.num(), gen2drv_rd.num());
                 $display("   wr_full = %0b, rd_empty = %0b", intf.wr_full, intf.rd_empty);
@@ -154,16 +157,28 @@ module tb_top;
         $display("[%0t ns] [TB] Generator finished generating 1000 operations.", $time);
 
         // =====================================================================
-        // CLOCKED DRAINAGE SEQUENCE
+        // DUAL-REGIME CLOCKED DRAINAGE SEQUENCE
         // =====================================================================
         
-        // 1. Poll on wr_clk until write mailbox is empty
+        // Phase 1: First 500 writes run with Fast Write (100 MHz) / Slow Read (40 MHz)
+        // Stresses wr_full
+        while (gen2drv_wr.num() > 500) begin
+            @(posedge wr_clk);
+        end
+        $display("[%0t ns] [TB] 500 writes left. Swapping clocks to Slow Write (40 MHz) / Fast Read (100 MHz)!", $time);
+        
+        // Swap clock frequencies on the fly!
+        wr_half_period = 12.5; // Slow down Write to 40 MHz
+        rd_half_period = 5.0;  // Speed up Read to 100 MHz
+
+        // Phase 2: Remaining 500 writes run with Slow Write / Fast Read
+        // Stresses rd_empty
         while (gen2drv_wr.num() > 0) begin
             @(posedge wr_clk);
         end
         $display("[%0t ns] [TB] All write transactions driven.", $time);
 
-        // 2. Poll on rd_clk until read mailbox is empty and scoreboard matches all 1000 items
+        // 3. Poll on rd_clk until read mailbox is empty and scoreboard matches all 1000 items
         while (gen2drv_rd.num() > 0 || scb.golden_queue.size() > 0) begin
             @(posedge rd_clk);
         end
@@ -176,9 +191,14 @@ module tb_top;
         $display("\n========================================================");
         $display("                   SIMULATION RESULTS                   ");
         $display("========================================================");
-        $display(" Total Matches: %0d", scb.match_count);
-        $display(" Total Errors:  %0d", scb.error_count);
-        $display(" Remaining in Golden Queue: %0d", scb.golden_queue.size());
+        $display(" Total Matches:              %0d", scb.match_count);
+        $display(" Total Errors:               %0d", scb.error_count);
+        $display(" Remaining in Golden Queue:  %0d", scb.golden_queue.size());
+        $display("--------------------------------------------------------");
+        $display(" CORNER-CASE COVERAGE:");
+        $display("   FIFO Full States Hit:     %0d cycles", mon.cov_full_hits);
+        $display("   FIFO Empty States Hit:    %0d cycles", mon.cov_empty_hits);
+        $display("   Simultaneous R/W Cycles:  %0d cycles", mon.cov_simul_rw);
         $display("========================================================");
 
         if (scb.error_count == 0 && scb.match_count == 1000) begin
