@@ -6,8 +6,8 @@ module wptr_full #(
     input logic                     wr_en,
     input logic  [ADDR_WIDTH:0]     rq2_rptr,
     output logic [ADDR_WIDTH:0]     wr_ptr_gray,
-    output logic [ADDR_WIDTH-1:0]   wr_addr
-    output logic                    wr_full,
+    output logic [ADDR_WIDTH-1:0]   wr_addr,
+    output logic                    wr_full
 );
     logic [ADDR_WIDTH:0] wbin, wbin_next;
     logic [ADDR_WIDTH:0] wgray_next;

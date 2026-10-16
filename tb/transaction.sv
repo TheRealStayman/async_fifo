@@ -114,38 +114,42 @@
  *      * `active_c`: Enforce `(wr || rd) == 1'b1;`
  * ============================================================================= */
 
- `ifndef TRANSACTION_SV
+`ifndef TRANSACTION_SV
 `define TRANSACTION_SV
 
 class fifo_transaction #(parameter int DATA_WIDTH = 8);
 
-    // Stimulus (Inputs to the hardware)
-    rand bit                  wr;
-    rand bit                  rd;
-    rand bit [DATA_WIDTH-1:0] wr_data;
+    // Stimulus (Inputs to hardware) - Removed 'rand' to bypass license lock
+    bit                  wr;
+    bit                  rd;
+    bit [DATA_WIDTH-1:0] wr_data;
 
     // Response & Status (Outputs observed from hardware)
     bit      [DATA_WIDTH-1:0] rd_data;
     bit                       full;
     bit                       empty;
 
-    // Probability weighting: 50% chance of write, 50% chance of read
-    constraint op_dist_c {
-        wr dist { 1 := 50, 0 := 50 };
-        rd dist { 1 := 50, 0 := 50 };
-    }
+    // Emulate constrained-random distribution using free standard built-ins
+    function void randomize_fields();
+        // 50% probability of write, 50% probability of read
+        wr = $urandom_range(0, 1);
+        rd = $urandom_range(0, 1);
 
-    // Force at least one operation so we do not generate idle cycles
-    constraint at_least_one_op_c {
-        (wr || rd) == 1'b1;
-    }
+        // Enforce the rule: at least one operation must be active
+        if (!wr && !rd) begin
+            if ($urandom_range(0, 1)) wr = 1'b1;
+            else                      rd = 1'b1;
+        end
+
+        // Random data payload
+        wr_data = $urandom;
+    endfunction
 
     function void print(string tag = "TRANS");
         $display("[%0t ns] [%s] WR=%0b RD=%0b | WR_DATA=0x%02h | RD_DATA=0x%02h | FULL=%0b EMPTY=%0b",
                  $time, tag, wr, rd, wr_data, rd_data, full, empty);
     endfunction
 
-    // Deep copy creates a fresh object instead of duplicating a pointer handle
     function fifo_transaction#(DATA_WIDTH) copy();
         fifo_transaction#(DATA_WIDTH) clone;
         clone         = new();

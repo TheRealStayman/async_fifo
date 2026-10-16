@@ -73,49 +73,74 @@ class fifo_driver #(parameter int DATA_WIDTH = 8);
     typedef fifo_transaction #(DATA_WIDTH) trans_t;
 
     virtual fifo_if #(DATA_WIDTH) vif;
-    mailbox #(trans_t)            gen2drv;
+    mailbox #(trans_t)            gen2drv_wr;
+    mailbox #(trans_t)            gen2drv_rd;
 
-    function new(virtual fifo_if #(DATA_WIDTH) vif, mailbox #(trans_t) gen2drv);
-        this.vif     = vif;
-        this.gen2drv = gen2drv;
+    function new(virtual fifo_if #(DATA_WIDTH) vif, 
+                 mailbox #(trans_t) gen2drv_wr, 
+                 mailbox #(trans_t) gen2drv_rd);
+        this.vif        = vif;
+        this.gen2drv_wr = gen2drv_wr;
+        this.gen2drv_rd = gen2drv_rd;
     endfunction
 
     task reset();
         vif.wr_en   <= 1'b0;
         vif.wr_data <= '0;
         vif.rd_en   <= 1'b0;
-        @(posedge vif.wr_rst_n);
-        @(posedge vif.rd_rst_n);
+        wait (vif.wr_rst_n === 1'b1);
+        wait (vif.rd_rst_n === 1'b1);
         @(posedge vif.wr_clk);
         @(posedge vif.rd_clk);
     endtask
 
-    task run();
+    task drive_write();
+        trans_t tr;
+        int wr_count = 0;
+        forever begin
+            gen2drv_wr.get(tr);
+            wr_count++;
+            if (wr_count % 100 == 0) $display("[%0t ns] [DRV_WR] Processing write #%0d...", $time, wr_count);
+
+            // Print if stuck waiting on full
+            // if (vif.wr_full === 1'b1) begin
+            //     $display("[%0t ns] [DRV_WR] FIFO is FULL. Pausing writes...", $time);
+            // end
+
+            while (vif.wr_full === 1'b1) begin
+                @(posedge vif.wr_clk);
+            end
+
+            @(posedge vif.wr_clk);
+            vif.wr_en   <= 1'b1;
+            vif.wr_data <= tr.wr_data;
+            @(posedge vif.wr_clk);
+            vif.wr_en   <= 1'b0;
+        end
+    endtask
+
+    task drive_read();
         trans_t tr;
         forever begin
-            gen2drv.get(tr);
+            gen2drv_rd.get(tr);
 
-            // Execute write branch on write-clock domain
-            if (tr.wr) begin
-                @(posedge vif.wr_clk);
-                if (!vif.wr_full) begin
-                    vif.wr_en   <= 1'b1;
-                    vif.wr_data <= tr.wr_data;
-                end
-                @(posedge vif.wr_clk);
-                vif.wr_en   <= 1'b0;
+            // Wait for data with non-blocking check
+            while (vif.rd_empty === 1'b1) begin
+                @(posedge vif.rd_clk);
             end
 
-            // Execute read branch on read-clock domain
-            if (tr.rd) begin
-                @(posedge vif.rd_clk);
-                if (!vif.rd_empty) begin
-                    vif.rd_en <= 1'b1;
-                end
-                @(posedge vif.rd_clk);
-                vif.rd_en <= 1'b0;
-            end
+            @(posedge vif.rd_clk);
+            vif.rd_en <= 1'b1;
+            @(posedge vif.rd_clk);
+            vif.rd_en <= 1'b0;
         end
+    endtask
+
+    task run();
+        fork
+            drive_write();
+            drive_read();
+        join
     endtask
 endclass
 
