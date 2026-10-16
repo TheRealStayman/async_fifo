@@ -1,4 +1,3 @@
-# Replace "vlib work" in run.do with a clean wipe:
 if {[file exists work]} {
     vdel -lib work -all
 }
