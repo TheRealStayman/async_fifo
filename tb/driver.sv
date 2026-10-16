@@ -115,6 +115,11 @@ class fifo_driver #(parameter int DATA_WIDTH = 8);
             @(posedge vif.wr_clk);
             vif.wr_en   <= 1'b0;
 
+            // Occasionally pause writing (5% chance) so the slower read clock can drain the FIFO to EMPTY mid-test
+            if ($urandom_range(1, 100) <= 5) begin
+                repeat (40) @(posedge vif.wr_clk);
+            end
+
             wr_count++;
             if (wr_count % 200 == 0) begin
                 $display("[%0t ns] [DRV_WR] Completed write #%0d", $time, wr_count);
@@ -141,6 +146,11 @@ class fifo_driver #(parameter int DATA_WIDTH = 8);
             // Wait for the next rising clock edge where the DUT processes this read
             @(posedge vif.rd_clk);
             vif.rd_en <= 1'b0;
+
+            // Occasionally pause reading (5% chance) so the FIFO slams back to FULL
+            if ($urandom_range(1, 100) <= 5) begin
+                repeat (15) @(posedge vif.rd_clk);
+            end
 
             rd_count++;
             if (rd_count % 200 == 0) begin
